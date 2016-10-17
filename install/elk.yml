@@ -11,4 +11,4 @@
     - { role: logstash, when: ((logging_backend is none) or (logging_backend == 'logstash')) }
     - { role: nginx }
     - { role: curator, when: install_curator_tool }
-    - { role: kibana }
+    - { role: grafana }
