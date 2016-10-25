@@ -2,4 +2,6 @@
 
 
 2. Use following command to install Elasticsearc, logstash and grafana
-   ansible-playbook -i hosts install/elk.yml
+   
+   
+      ansible-playbook -i hosts install/elk.yml
