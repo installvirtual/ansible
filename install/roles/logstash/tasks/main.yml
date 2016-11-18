@@ -3,20 +3,20 @@
 # Install/run logstash
 #
 
-- name: Copy logstash yum repo file
-  copy:
-    src=logstash.repo
-    dest=/etc/yum.repos.d/logstash.repo
-    owner=root
-    group=root
-    mode=0644
+- name: Download and install the Public Signing Key 
+  #command: wget -qO - https://packages.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+  apt_key: url=http://packages.elasticsearch.org/GPG-KEY-elasticsearch state=present
   become: true
 
-- name: Install logstash rpms
-  yum: name={{ item }} state=present
+- name: Add the repository definition to your /etc/apt/sources.list file
+  command: echo 'deb http://packages.elastic.co/logstash/2.2/debian stable main' | sudo tee /etc/apt/sources.list.d/logstash-2.2.x.list 
   become: true
-  with_items:
-    - logstash
+
+- apt: update_cache=yes
+
+- name: Install logstash
+  apt: name=logstash state=present
+  become: true
 
 - name: Copy logstash input filters
   copy:
@@ -74,7 +74,7 @@
   become: true
 
 - name: Check OpenSSL SANs (SubjectAltName) entry for CA
-  shell: grep "{{ ansible_default_ipv4.address }}" /etc/pki/tls/openssl.cnf | wc -l
+  shell: grep "{{ ansible_default_ipv4.address }}" /etc/pki/tls/openssl_extras.cnf | wc -l
   ignore_errors: true
   register: subjectAltName_exists
   tags:
@@ -84,7 +84,7 @@
 
 - name: Add OpenSSL SANs (SubjectAltName) entry for CA
   lineinfile:
-    dest: /etc/pki/tls/openssl.cnf
+    dest: /etc/pki/tls/openssl_extras.cnf
     line: 'subjectAltName = "{{ ansible_default_ipv4.address }}"'
     regexp: '^ Extensions for a typical CA'
     insertbefore: '# Extensions for a typical CA'
@@ -109,70 +109,70 @@
 # 1) use firewall-cmd if firewalld is utilized
 # 2) insert iptables rule if iptables is used
 
-# Firewalld
-- name: Determine if firewalld is in use
-  shell: systemctl is-enabled firewalld.service | egrep -qv 'masked|disabled'
-  ignore_errors: true
-  register: firewalld_in_use
-  tags:
-    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
-    # Check if firewall is enabled
-    - skip_ansible_lint
-
-- name: Determine if firewalld is active
-  shell: systemctl is-active firewalld.service | grep -vq inactive
-  ignore_errors: true
-  register: firewalld_is_active
-  tags:
-    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
-    # Check if firewall is active
-    - skip_ansible_lint
-
-- name: Determine if TCP/{{logstash_syslog_port}} is already active
-  shell: firewall-cmd --list-ports | egrep -q "^{{logstash_syslog_port}}/tcp"
-  ignore_errors: true
-  register: firewalld_logstash_syslog_port_exists
-  tags:
-    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
-    # Need to validate if port already configured
-    - skip_ansible_lint
-
-# add firewall rule via firewall-cmd
-- name: Add firewall rule for TCP/{{logstash_syslog_port}} (firewalld)
-  command: "{{ item }}"
-  with_items:
-    - firewall-cmd --zone=public --add-port={{logstash_syslog_port}}/tcp --permanent
-    - firewall-cmd --reload
-  ignore_errors: true
-  become: true
-  when: firewalld_in_use.rc == 0 and firewalld_is_active.rc == 0 and firewalld_logstash_syslog_port_exists.rc != 0
-
-# iptables-services
-- name: check firewall rules for TCP/{{logstash_syslog_port}} (iptables-services)
-  shell: grep "dport {{logstash_syslog_port}} \-j ACCEPT" /etc/sysconfig/iptables | wc -l
-  ignore_errors: true
-  register: iptables_logstash_syslog_port_exists
-  failed_when: iptables_logstash_syslog_port_exists == 127
-  tags:
-    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
-    # Need to validate if port already configured
-    - skip_ansible_lint
-
-- name: Add firewall rule for TCP/{{logstash_syslog_port}} (iptables-services)
-  lineinfile:
-    dest: /etc/sysconfig/iptables
-    line: '-A INPUT -p tcp -m tcp --dport {{logstash_syslog_port}} -j ACCEPT'
-    regexp: '^INPUT -i lo -j ACCEPT'
-    insertbefore: '-A INPUT -i lo -j ACCEPT'
-    backup: yes
-  when: firewalld_in_use.rc != 0 and firewalld_is_active.rc != 0 and iptables_logstash_syslog_port_exists.stdout|int == 0
-  register: iptables_needs_restart
-
-- name: Restart iptables-services for TCP/{{logstash_syslog_port}} (iptables-services)
-  shell: systemctl restart iptables.service
-  ignore_errors: true
-  when: iptables_needs_restart != 0 and firewalld_in_use.rc != 0 and firewalld_is_active.rc != 0
-  tags:
-    # Skip ANSIBLE0013 Use shell only when shell functionality is required
-    # No systemctl module available in current stable release (Ansible 2.1)
-    - skip_ansible_lint
+## Firewalld
+#- name: Determine if firewalld is in use
+#  shell: systemctl is-enabled firewalld.service | egrep -qv 'masked|disabled'
+#  ignore_errors: true
+#  register: firewalld_in_use
+#  tags:
+#    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
+#    # Check if firewall is enabled
+#    - skip_ansible_lint
+#
+#- name: Determine if firewalld is active
+#  shell: systemctl is-active firewalld.service | grep -vq inactive
+#  ignore_errors: true
+#  register: firewalld_is_active
+#  tags:
+#    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
+#    # Check if firewall is active
+#    - skip_ansible_lint
+#
+#- name: Determine if TCP/{{logstash_syslog_port}} is already active
+#  shell: firewall-cmd --list-ports | egrep -q "^{{logstash_syslog_port}}/tcp"
+#  ignore_errors: true
+#  register: firewalld_logstash_syslog_port_exists
+#  tags:
+#    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
+#    # Need to validate if port already configured
+#    - skip_ansible_lint
+#
+## add firewall rule via firewall-cmd
+#- name: Add firewall rule for TCP/{{logstash_syslog_port}} (firewalld)
+#  command: "{{ item }}"
+#  with_items:
+#    - firewall-cmd --zone=public --add-port={{logstash_syslog_port}}/tcp --permanent
+#    - firewall-cmd --reload
+#  ignore_errors: true
+#  become: true
+#  when: firewalld_in_use.rc == 0 and firewalld_is_active.rc == 0 and firewalld_logstash_syslog_port_exists.rc != 0
+#
+## iptables-services
+#- name: check firewall rules for TCP/{{logstash_syslog_port}} (iptables-services)
+#  shell: grep "dport {{logstash_syslog_port}} \-j ACCEPT" /etc/sysconfig/iptables | wc -l
+#  ignore_errors: true
+#  register: iptables_logstash_syslog_port_exists
+#  failed_when: iptables_logstash_syslog_port_exists == 127
+#  tags:
+#    # Skip ANSIBLE0012 Commands should not change things if nothing needs doing
+#    # Need to validate if port already configured
+#    - skip_ansible_lint
+#
+#- name: Add firewall rule for TCP/{{logstash_syslog_port}} (iptables-services)
+#  lineinfile:
+#    dest: /etc/sysconfig/iptables
+#    line: '-A INPUT -p tcp -m tcp --dport {{logstash_syslog_port}} -j ACCEPT'
+#    regexp: '^INPUT -i lo -j ACCEPT'
+#    insertbefore: '-A INPUT -i lo -j ACCEPT'
+#    backup: yes
+#  when: firewalld_in_use.rc != 0 and firewalld_is_active.rc != 0 and iptables_logstash_syslog_port_exists.stdout|int == 0
+#  register: iptables_needs_restart
+#
+#- name: Restart iptables-services for TCP/{{logstash_syslog_port}} (iptables-services)
+#  shell: systemctl restart iptables.service
+#  ignore_errors: true
+#  when: iptables_needs_restart != 0 and firewalld_in_use.rc != 0 and firewalld_is_active.rc != 0
+#  tags:
+#    # Skip ANSIBLE0013 Use shell only when shell functionality is required
+#    # No systemctl module available in current stable release (Ansible 2.1)
+#    - skip_ansible_lint
